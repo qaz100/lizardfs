@@ -1,3 +1,6 @@
+# This test has a bug when run with valgrind: causes the test doesn't end automatically and
+# gets timed out
+
 CHUNKSERVERS=1 \
 		MOUNT_EXTRA_CONFIG="mfscachemode=NEVER" \
 		CHUNKSERVER_EXTRA_CONFIG="HDD_TEST_FREQ = 0" \

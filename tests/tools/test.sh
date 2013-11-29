@@ -34,9 +34,28 @@ test_frozen() {
 	[[ -f "$test_end_file" ]]
 }
 
+# Other modules can register commands to be executed at the end of test_begin
+# or at the beginning of test_end
+
+TEST_POST_BEGIN=("")
+TEST_PRE_END=("")
+
+test_register_post_begin () {
+	TEST_POST_BEGIN+=("$*")
+}
+
+test_register_pre_end () {
+	TEST_PRE_END+=("$*")
+}
+
 # You can call this function in a test case to immediatelly end the test.
 # You don't have to; it will be called automatically at the end of the test.
 test_end() {
+	{ pkill -TERM memcheck &> /dev/null && sleep 3; } || true
+	pkill -KILL memcheck &> /dev/null || true
+	for command in "${TEST_PRE_END[@]}"; do
+		$command
+	done
 	test_freeze_result
 	local errors=$(cat "$test_result_file")
 	cd # To make unmount possible if someone changed directory to the mountpoint
@@ -51,7 +70,7 @@ test_end() {
 # Do not run directly in test cases
 # This should be called at the very beginning of a test
 test_begin() {
-	test_result_file=$TEMP_DIR/$(unique_file)_results.txt
+	test_result_file="$TEMP_DIR/$(unique_file)_results.txt"
 	test_end_file=$test_result_file.end
 	check_configuration
 	test_cleanup
@@ -59,6 +78,12 @@ test_begin() {
 	trap 'trap - ERR; set +eEu; catch_error_ "$BASH_SOURCE" "$LINENO" "$FUNCNAME"; exit 1' ERR
 	set -E
 	timeout_init
+	if [[ ${USE_VALGRIND} ]]; then
+		enable_valgrind
+	fi
+	for command in "${TEST_POST_BEGIN[@]}"; do
+		$command
+	done
 }
 
 # Do not use directly
@@ -66,7 +91,8 @@ test_begin() {
 test_cleanup() {
 	# Unmount all mfsmounts
 	retries=0
-	killall -9 mfsmount || true
+	pkill -KILL mfsmount || true
+	pkill -KILL memcheck || true
 	while list_of_mounts=$(cat /etc/mtab | grep mfs | grep fuse); do
 		echo "$list_of_mounts" | awk '{print $2}' | \
 				xargs -r -d'\n' -n1 fusermount -u || sleep 1
